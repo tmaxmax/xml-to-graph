@@ -13,14 +13,14 @@ jobs:
         with:
           go-version: '^1.17.1'
       - name: 'Build Linux binary'
-        run: go build -o xml-to-graph-linux-amd64
+        run: go build -o xml-to-graph
       - name: 'Build Windows binary'
-        run: GOOS=windows go build -o xml-to-graph-windows-amd64
+        run: GOOS=windows go build -o xml-to-graph.exe
       - name: 'Release'
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            xml-to-graph-linux-amd64
-            xml-to-graph-windows-amd64.exe
+            xml-to-graph
+            xml-to-graph.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
