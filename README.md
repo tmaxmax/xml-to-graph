@@ -26,3 +26,15 @@ Convertește dintr-un fișier și scrie în altul:
 ```sh
 $ xml-to-graph -i graf.xml -o input.in
 ```
+
+Dacă fișierul `input.in` este deja existent, acesta va fi suprascris, altfel va fi creat. Niciunul dintre paramteri nu este obligatorii: de exemplu, intrarea poate fi din STDIN, iar output-ul să fie într-un fișier:
+
+```sh
+$ xml-to-graph -o input.in
+```
+
+Sau invers:
+
+```sh
+$ xml-to-graph -i graf.xml
+```
