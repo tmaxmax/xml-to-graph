@@ -15,7 +15,7 @@ jobs:
       - name: 'Build Linux binary'
         run: go build -o xml-to-graph-linux-amd64
       - name: 'Build Windows binary'
-        run: go build -o xml-to-graph-windows-amd64
+        run: go build -o xml-to-graph-windows-amd64.exe
       - name: 'Release'
         uses: softprops/action-gh-release@v1
         with:
