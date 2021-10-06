@@ -48,7 +48,7 @@ func runMain() int {
 	}
 
 	if *outputFile != "" {
-		f, err := os.OpenFile(*outputFile, os.O_CREATE|os.O_WRONLY, 0755)
+		f, err := os.Create(*outputFile)
 		if err != nil {
 			log.Printf("Failed to open output file: %q: %v\n", *outputFile, err)
 			return 1
