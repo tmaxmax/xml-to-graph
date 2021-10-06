@@ -18,11 +18,11 @@ Usage of xml-to-graph.exe:
 Convertește input din STDIN și afișează în STDOUT (util când datele sunt primite de la alt script):
 
 ```sh
-curl http://example.com/graf.xml | xml-to-graph
+$ curl http://example.com/graf.xml | xml-to-graph
 ```
 
 Convertește dintr-un fișier și scrie în altul:
 
 ```sh
-xml-to-graph -i graf.xml -o input.in
+$ xml-to-graph -i graf.xml -o input.in
 ```
