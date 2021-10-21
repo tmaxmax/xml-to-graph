@@ -6,12 +6,14 @@ on:
 jobs:
   release:
     runs-on: 'ubuntu-latest'
-    name: 'Build release binaries'
+    name: 'Test code and build release binaries'
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-go@v2
         with:
           go-version: '^1.17.1'
+      - name: 'Run tests'
+        run: go test -v ./...
       - name: 'Build Linux binary'
         run: go build -o xml-to-graph
       - name: 'Build Windows binary'
