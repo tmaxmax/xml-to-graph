@@ -7,21 +7,9 @@ import (
 	"io"
 	"log"
 	"os"
+
+	"gihtub.com/tmaxmax/xml-to-graph/internal/graph"
 )
-
-type Node struct {
-	ID string `xml:"id,attr"`
-}
-
-type Edge struct {
-	Src int `xml:"source"`
-	Dst int `xml:"target"`
-}
-
-type Graph struct {
-	Nodes []Node `xml:"node"`
-	Edges []Edge `xml:"edge"`
-}
 
 func main() {
 	os.Exit(runMain())
@@ -58,7 +46,7 @@ func runMain() int {
 		output = f
 	}
 
-	var g Graph
+	var g graph.Graph
 	if err := xml.NewDecoder(input).Decode(&g); err != nil {
 		log.Printf("Failed to parse XML input: %v\n", err)
 		return 1
