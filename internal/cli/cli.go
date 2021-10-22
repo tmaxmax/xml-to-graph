@@ -1,8 +1,8 @@
 package cli
 
 import (
+	"bufio"
 	"context"
-	"encoding/xml"
 	"flag"
 	"fmt"
 	"net/http"
@@ -12,7 +12,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 
 	"gihtub.com/tmaxmax/xml-to-graph/internal/graph"
 	"golang.org/x/sync/errgroup"
@@ -98,6 +100,8 @@ type CLI struct {
 	gr        *errgroup.Group
 	ctx       context.Context
 	ps        *http.Server
+	brp       sync.Pool
+	verbose   bool
 }
 
 func New(args []string) *CLI {
@@ -106,6 +110,7 @@ func New(args []string) *CLI {
 	outputDir := f.String("output-dir", ".", usageFlagOutputDir)
 	globPattern := f.String("glob", "", usageFlagGlob)
 	profilerAddr := f.String("profiler", "", "The address for the pprof server (leave empty for disabling the profiler)")
+	verboseOuput := f.Bool("verbose", false, "Show various information and progress")
 	usage := f.Usage
 	f.Usage = func() {
 		fmt.Fprint(os.Stderr, cliDescription)
@@ -141,6 +146,12 @@ func New(args []string) *CLI {
 		printer:   p,
 		ch:        make(chan string),
 		progress:  make(chan struct{}),
+		brp: sync.Pool{
+			New: func() interface{} {
+				return bufio.NewReader(nil)
+			},
+		},
+		verbose: *verboseOuput,
 	}
 
 	if c.outputDir == "" {
@@ -161,10 +172,16 @@ func New(args []string) *CLI {
 	return c
 }
 
+func (c *CLI) printf(format string, args ...interface{}) {
+	if c.verbose {
+		fmt.Fprintf(os.Stderr, format, args...)
+	}
+}
+
 func (c *CLI) Run() int {
 	l := len(c.filepaths)
 	if l == 0 {
-		fmt.Fprintln(os.Stderr, "No files to process, exiting...")
+		c.printf("No files to process, exiting...\n")
 		return 0
 	}
 
@@ -173,10 +190,10 @@ func (c *CLI) Run() int {
 		workers = l
 	}
 
-	fmt.Fprintf(os.Stderr, "Starting file conversion...\nParallelism: %d workers\n", workers)
+	c.printf("Starting file conversion...\nParallelism: %d workers\n", workers)
 	abs, err := filepath.Abs(c.outputDir)
 	if err == nil {
-		fmt.Fprintf(os.Stderr, "Output directory: %s\n", abs)
+		c.printf("Output directory: %s\n", abs)
 	}
 
 	sctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -188,7 +205,7 @@ func (c *CLI) Run() int {
 	pserr := make(chan error, 1)
 
 	if c.ps != nil {
-		fmt.Fprintf(os.Stderr, "Profiler server listening at %s\n", c.ps.Addr)
+		c.printf("Profiler server listening at %s\n", c.ps.Addr)
 		shouldShutdown := true
 
 		go func() {
@@ -212,7 +229,7 @@ func (c *CLI) Run() int {
 			if err, ok := <-pserr; err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to shut down profiler server: %v\n", err)
 			} else if ok {
-				fmt.Fprintf(os.Stderr, "Profiler server was successfully shut down!\n")
+				c.printf("Profiler server was successfully shut down!\n")
 			}
 		}()
 	}
@@ -221,7 +238,11 @@ func (c *CLI) Run() int {
 		c.gr.Go(c.worker)
 	}
 
-	c.gr.Go(c.outputProgress)
+	if c.verbose {
+		c.gr.Go(c.outputProgress)
+	}
+
+	start := time.Now()
 	c.gr.Go(c.sendPaths)
 
 	waitErr := make(chan error)
@@ -232,14 +253,16 @@ func (c *CLI) Run() int {
 	case <-sctx.Done():
 	}
 
+	duration := time.Now().Sub(start)
+
 	if err = <-waitErr; sctx.Err() != nil {
-		fmt.Fprintln(os.Stderr, "\nConversion stopped forcefully, exiting...")
+		c.printf("\nConversion stopped forcefully, exiting after %v...\n", duration)
 		return 0
 	} else if err != nil {
 		fmt.Fprintf(os.Stderr, "\nFailed to process files: %v\n", err)
 		return 2
 	} else {
-		fmt.Fprintln(os.Stderr, "\nAll files were successfully converted!")
+		c.printf("\nAll files were successfully converted! Done in %v\n", duration)
 		return 0
 	}
 }
@@ -285,7 +308,7 @@ func (c *CLI) outputProgress() error {
 		hashes := int(float64(barSize) * progress)
 		dashes := barSize - hashes
 		barStr := strings.Repeat("#", hashes) + strings.Repeat("-", dashes)
-		fmt.Fprintf(os.Stderr, "Progress: [%s] %d/%d %d%%\r", barStr, done, l, int(progress*100+0.5))
+		fmt.Fprintf(os.Stderr, "Progress: [%s] %d/%d %.2f%%\r", barStr, done, l, progress*100)
 	}
 
 	printProgress()
@@ -318,8 +341,12 @@ func (c *CLI) processFile(path string) error {
 	}
 	defer output.Close()
 
-	var g graph.Graph
-	if err := xml.NewDecoder(input).Decode(&g); err != nil {
+	br := c.brp.Get().(*bufio.Reader)
+	defer c.brp.Put(br)
+	br.Reset(input)
+
+	g, err := graph.FromXMLNoStd(br)
+	if err != nil {
 		return err
 	}
 
@@ -328,9 +355,11 @@ func (c *CLI) processFile(path string) error {
 		return err
 	}
 
-	select {
-	case <-c.ctx.Done():
-	case c.progress <- struct{}{}:
+	if c.verbose {
+		select {
+		case <-c.ctx.Done():
+		case c.progress <- struct{}{}:
+		}
 	}
 
 	return nil
