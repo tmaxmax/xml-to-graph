@@ -5,9 +5,11 @@ import (
 	"encoding/xml"
 	"flag"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 
 	"gihtub.com/tmaxmax/xml-to-graph/internal/graph"
 	"golang.org/x/sync/errgroup"
@@ -60,22 +62,27 @@ Format string examples:
 `
 
 	usageFlagOutputDir = `The directory to output the converted files to.`
+
+	usageFlagGlob = `A pattern that is used to match the files that will be converted. CLI arguments
+have priority over this flag.`
 )
 
 type CLI struct {
-	outputDir string
-	filepaths []string
-	printer   *graph.Printer
-	ch        chan string
-	progress  chan struct{}
-	gr        *errgroup.Group
-	ctx       context.Context
+	outputDir    string
+	filepaths    []string
+	printer      *graph.Printer
+	ch           chan string
+	progress     chan struct{}
+	progressDone chan struct{}
+	gr           *errgroup.Group
+	ctx          context.Context
 }
 
 func New(args []string) *CLI {
 	f := flag.NewFlagSet(cliName, flag.ExitOnError)
 	formatString := f.String("format", "%n %m\n%M\n", usageFlagFormat)
 	outputDir := f.String("output-dir", ".", usageFlagOutputDir)
+	globPattern := f.String("glob", "", usageFlagGlob)
 	f.Parse(args)
 
 	fmtStr := *formatString
@@ -88,15 +95,22 @@ func New(args []string) *CLI {
 		fatalf("%v\n\n%s", err, usageFlagFormat)
 	}
 
-	gr, ctx := errgroup.WithContext(context.Background())
+	filepaths := f.Args()
+	if len(filepaths) == 0 && *globPattern != "" {
+		ps, err := filepath.Glob(*globPattern)
+		if err != nil {
+			fatalf("glob pattern invalid: %v\n", err)
+		}
+		filepaths = ps
+	}
+
 	c := &CLI{
-		outputDir: *outputDir,
-		filepaths: f.Args(),
-		printer:   p,
-		ch:        make(chan string),
-		progress:  make(chan struct{}),
-		gr:        gr,
-		ctx:       ctx,
+		outputDir:    *outputDir,
+		filepaths:    filepaths,
+		printer:      p,
+		ch:           make(chan string),
+		progress:     make(chan struct{}),
+		progressDone: make(chan struct{}),
 	}
 
 	if c.outputDir == "" {
@@ -107,6 +121,7 @@ func New(args []string) *CLI {
 }
 
 func (c *CLI) Run() int {
+
 	l := len(c.filepaths)
 	if l == 0 {
 		printf("No files to process, exiting...\n")
@@ -125,6 +140,28 @@ func (c *CLI) Run() int {
 		printf("Output directory: %s\n", abs)
 	}
 
+	sctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	gr, ctx := errgroup.WithContext(sctx)
+	c.gr = gr
+	c.ctx = ctx
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		select {
+		case <-ctx.Done():
+			<-c.progressDone
+			printf("\nAll files were successfully converted!")
+		case <-sctx.Done():
+			<-c.progressDone
+			printf("\nConversion stopped forcefully, exiting...")
+		}
+	}()
+
 	for i := 0; i < workers; i++ {
 		c.gr.Go(c.worker)
 	}
@@ -137,7 +174,7 @@ func (c *CLI) Run() int {
 		return 2
 	}
 
-	printf("\n")
+	<-done
 
 	return 0
 }
@@ -173,17 +210,19 @@ func (c *CLI) worker() error {
 }
 
 func (c *CLI) outputProgress() error {
+	defer close(c.progressDone)
+
 	const barSize = 40
 
 	var done int
+	l := len(c.filepaths)
 
 	printProgress := func() {
-		l := len(c.filepaths)
-		p := float64(done) / float64(l)
-		hashes := int(float64(barSize) * p)
+		progress := float64(done) / float64(len(c.filepaths))
+		hashes := int(float64(barSize) * progress)
 		dashes := barSize - hashes
 		barStr := strings.Repeat("#", hashes) + strings.Repeat("-", dashes)
-		printf("Progress: [%s] %d/%d %d%%\r\r", barStr, done, l, int(p*100+0.5))
+		printf("Progress: [%s] %d/%d %d%%\r", barStr, done, l, int(progress*100+0.5))
 	}
 
 	printProgress()
@@ -193,7 +232,7 @@ func (c *CLI) outputProgress() error {
 		case <-c.progress:
 			done++
 			printProgress()
-			if done == len(c.filepaths) {
+			if done == l {
 				return nil
 			}
 		case <-c.ctx.Done():
