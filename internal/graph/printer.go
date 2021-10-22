@@ -83,28 +83,27 @@ type Printer struct {
 	bwp sync.Pool
 }
 
-func (p *Printer) getWriter(w io.Writer) writer {
-	switch v := w.(type) {
-	case *bytes.Buffer:
-		return v
-	case *strings.Builder:
-		return v
-	case *bufio.Writer:
-		return v
-	default:
-		bw := p.bwp.Get().(*bufio.Writer)
-		defer p.bwp.Put(bw)
-		bw.Reset(w)
-		return bw
-	}
-}
-
 // Print writes the given graph to the given writer.
 // It returns the number of bytes written and any error
 // that the underlying writer may have returned. If the writer
 // returns no errors, this error can be ignored.
 func (p *Printer) Print(w io.Writer, g *Graph) (int, error) {
-	wr, n := p.getWriter(w), 0
+	var wr writer
+	var n int
+
+	switch v := w.(type) {
+	case *bytes.Buffer:
+		wr = v
+	case *strings.Builder:
+		wr = v
+	case *bufio.Writer:
+		wr = v
+	default:
+		bw := p.bwp.Get().(*bufio.Writer)
+		defer p.bwp.Put(bw)
+		bw.Reset(w)
+		wr = bw
+	}
 
 	for _, op := range p.ops {
 		m, err := op.apply(wr, g)
