@@ -7,34 +7,21 @@ Descarcă pentru [Windows](https://github.com/tmaxmax/xml-to-graph/releases/down
 ## Utilizare
 
 ```sh
-$ xml-to-graph -help
-Usage of xml-to-graph.exe:
-  -i string
-        The file to parse the graph data from. Defaults to stdin.
-  -o string
-        The file to write the output to. Defaults to stdout.
+$ xml-to-graph path/to/file.xml path/to/another.xml
 ```
 
-Convertește input din STDIN și afișează în STDOUT (util când datele sunt primite de la alt script):
+Dacă ai foarte multe fișiere, poți folosi un glob pattern:
 
 ```sh
-$ curl http://example.com/graf.xml | xml-to-graph
+$ xml-to-graph -glob graph-*.xml
 ```
 
-Convertește dintr-un fișier și scrie în altul:
+Pe Windows, dă drag-and-drop la fișiere și vor fi convertite automat!
 
-```sh
-$ xml-to-graph -i graf.xml -o input.in
-```
+![Drag and drop demonstration on Windows](media/drag-n-drop.gif)
 
-Dacă fișierul `input.in` este deja existent, acesta va fi suprascris, altfel va fi creat. Niciunul dintre paramteri nu este obligatorii: de exemplu, intrarea poate fi din STDIN, iar output-ul să fie într-un fișier:
+Locația de salvare implicită este cea în care este rulat `xml-to-graph`. Dacă îl rulezi utilizând un shortcut Windows, această locație este cea specificată în câmpul `Start in` din proprietățile shortcut-ului:
 
-```sh
-$ xml-to-graph -o input.in
-```
+![Shortcut properties window](media/windows-shortcut-start-in.png)
 
-Sau invers:
-
-```sh
-$ xml-to-graph -i graf.xml
-```
+Rulează `xml-to-graph --help` pentru a vedea cum poți modifica locația de salvare, formatul fișierelor de ieșire și altele.
