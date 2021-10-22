@@ -88,14 +88,13 @@ more using the command's flags.
 )
 
 type CLI struct {
-	outputDir    string
-	filepaths    []string
-	printer      *graph.Printer
-	ch           chan string
-	progress     chan struct{}
-	progressDone chan struct{}
-	gr           *errgroup.Group
-	ctx          context.Context
+	outputDir string
+	filepaths []string
+	printer   *graph.Printer
+	ch        chan string
+	progress  chan struct{}
+	gr        *errgroup.Group
+	ctx       context.Context
 }
 
 func New(args []string) *CLI {
@@ -105,7 +104,7 @@ func New(args []string) *CLI {
 	globPattern := f.String("glob", "", usageFlagGlob)
 	usage := f.Usage
 	f.Usage = func() {
-		fmt.Fprint(f.Output(), cliDescription)
+		fmt.Fprint(os.Stderr, cliDescription)
 		usage()
 	}
 	f.Parse(args)
@@ -117,39 +116,45 @@ func New(args []string) *CLI {
 
 	p, err := graph.ParsePrinter(fmtStr)
 	if err != nil {
-		fatalf("%v\n\n%s", err, usageFlagFormat)
+		fmt.Fprintf(os.Stderr, "%v\n\n%s\n", err, usageFlagFormat)
+		os.Exit(1)
 	}
 
 	filepaths := f.Args()
 	if len(filepaths) == 0 && *globPattern != "" {
 		ps, err := filepath.Glob(*globPattern)
 		if err != nil {
-			fatalf("glob pattern invalid: %v\n", err)
+			fmt.Fprintf(os.Stderr, "glob pattern invalid: %v\n", err)
+			os.Exit(1)
 		}
+
 		filepaths = ps
 	}
 
 	c := &CLI{
-		outputDir:    *outputDir,
-		filepaths:    filepaths,
-		printer:      p,
-		ch:           make(chan string),
-		progress:     make(chan struct{}),
-		progressDone: make(chan struct{}),
+		outputDir: *outputDir,
+		filepaths: filepaths,
+		printer:   p,
+		ch:        make(chan string),
+		progress:  make(chan struct{}),
 	}
 
 	if c.outputDir == "" {
 		c.outputDir = f.Lookup("output-dir").DefValue
 	}
 
+	if err := os.MkdirAll(c.outputDir, 0600); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create output directory: %v\n", err)
+		os.Exit(2)
+	}
+
 	return c
 }
 
 func (c *CLI) Run() int {
-
 	l := len(c.filepaths)
 	if l == 0 {
-		printf("No files to process, exiting...\n")
+		fmt.Fprintln(os.Stderr, "No files to process, exiting...")
 		return 0
 	}
 
@@ -158,11 +163,10 @@ func (c *CLI) Run() int {
 		workers = l
 	}
 
-	printf("Starting file conversion...\n")
-	printf("Parallelism: %d workers\n", workers)
+	fmt.Fprintf(os.Stderr, "Starting file conversion...\nParallelism: %d workers\n", workers)
 	abs, err := filepath.Abs(c.outputDir)
 	if err == nil {
-		printf("Output directory: %s\n", abs)
+		fmt.Fprintf(os.Stderr, "Output directory: %s\n", abs)
 	}
 
 	sctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -172,21 +176,6 @@ func (c *CLI) Run() int {
 	c.gr = gr
 	c.ctx = ctx
 
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-
-		select {
-		case <-ctx.Done():
-			<-c.progressDone
-			printf("\nAll files were successfully converted!")
-		case <-sctx.Done():
-			<-c.progressDone
-			printf("\nConversion stopped forcefully, exiting...")
-		}
-	}()
-
 	for i := 0; i < workers; i++ {
 		c.gr.Go(c.worker)
 	}
@@ -194,14 +183,24 @@ func (c *CLI) Run() int {
 	c.gr.Go(c.outputProgress)
 	c.gr.Go(c.sendPaths)
 
-	if err := c.gr.Wait(); err != nil {
-		printf("\nFailed to process files: %v\n", err)
-		return 2
+	waitErr := make(chan error)
+	go func() { waitErr <- c.gr.Wait() }()
+
+	select {
+	case <-ctx.Done():
+	case <-sctx.Done():
 	}
 
-	<-done
-
-	return 0
+	if err = <-waitErr; sctx.Err() != nil {
+		fmt.Fprintln(os.Stderr, "\nConversion stopped forcefully, exiting...")
+		return 0
+	} else if err != nil {
+		fmt.Fprintf(os.Stderr, "\nFailed to process files: %v\n", err)
+		return 2
+	} else {
+		fmt.Fprintln(os.Stderr, "\nAll files were successfully converted!")
+		return 0
+	}
 }
 
 func (c *CLI) sendPaths() error {
@@ -235,8 +234,6 @@ func (c *CLI) worker() error {
 }
 
 func (c *CLI) outputProgress() error {
-	defer close(c.progressDone)
-
 	const barSize = 40
 
 	var done int
@@ -247,7 +244,7 @@ func (c *CLI) outputProgress() error {
 		hashes := int(float64(barSize) * progress)
 		dashes := barSize - hashes
 		barStr := strings.Repeat("#", hashes) + strings.Repeat("-", dashes)
-		printf("Progress: [%s] %d/%d %d%%\r", barStr, done, l, int(progress*100+0.5))
+		fmt.Fprintf(os.Stderr, "Progress: [%s] %d/%d %d%%\r", barStr, done, l, int(progress*100+0.5))
 	}
 
 	printProgress()
