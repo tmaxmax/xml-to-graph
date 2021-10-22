@@ -1,7 +1,6 @@
 package graph_test
 
 import (
-	"embed"
 	"encoding/xml"
 	"io"
 	"strings"
@@ -79,9 +78,6 @@ Adjacency matrix:
 		})
 	}
 }
-
-//go:embed benchfile.xml
-var benchFiles embed.FS
 
 func BenchmarkPrinter(b *testing.B) {
 	f, _ := benchFiles.ReadFile("benchfile.xml")

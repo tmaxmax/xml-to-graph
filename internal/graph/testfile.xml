@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE graph SYSTEM "graph.dtd">
+<graph>
+
+ <node id="1">
+  <cost>30.0</cost>
+  <label/>
+  <graphics>
+   <center>
+    <x>302</x>
+    <y>194</y>
+    <z>0</z>
+   </center>
+   <width>20</width>
+   <height>20</height>
+   <depth>20</depth>
+  </graphics>
+ </node>
+
+ <node id="2">
+  <cost>20.0</cost>
+  <label/>
+  <graphics>
+   <center>
+    <x>187</x>
+    <y>350</y>
+    <z>0</z>
+   </center>
+   <width>20</width>
+   <height>20</height>
+   <depth>20</depth>
+  </graphics>
+ </node>
+
+ <node id="3">
+  <cost>10.0</cost>
+  <label/>
+  <graphics>
+   <center>
+    <x>110</x>
+    <y>84</y>
+    <z>0</z>
+   </center>
+   <width>20</width>
+   <height>20</height>
+   <depth>20</depth>
+  </graphics>
+ </node>
+
+ <edge directed="no">
+  <cost>50.0</cost>
+  <label/>
+  <source>2</source>
+  <target>1</target>
+ </edge>
+
+ <edge directed="yes">
+  <cost>100.0</cost>
+  <label/>
+  <source>3</source>
+  <target>2</target>
+ </edge>
+
+</graph>
