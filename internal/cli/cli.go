@@ -5,6 +5,8 @@ import (
 	"encoding/xml"
 	"flag"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -95,6 +97,7 @@ type CLI struct {
 	progress  chan struct{}
 	gr        *errgroup.Group
 	ctx       context.Context
+	ps        *http.Server
 }
 
 func New(args []string) *CLI {
@@ -102,6 +105,7 @@ func New(args []string) *CLI {
 	formatString := f.String("format", "%n %m\n%M\n", usageFlagFormat)
 	outputDir := f.String("output-dir", ".", usageFlagOutputDir)
 	globPattern := f.String("glob", "", usageFlagGlob)
+	profilerAddr := f.String("profiler", "", "The address for the pprof server (leave empty for disabling the profiler)")
 	usage := f.Usage
 	f.Usage = func() {
 		fmt.Fprint(os.Stderr, cliDescription)
@@ -148,6 +152,12 @@ func New(args []string) *CLI {
 		os.Exit(2)
 	}
 
+	if *profilerAddr != "" {
+		c.ps = &http.Server{Addr: *profilerAddr}
+		runtime.SetBlockProfileRate(1)
+		runtime.SetMutexProfileFraction(1)
+	}
+
 	return c
 }
 
@@ -175,6 +185,37 @@ func (c *CLI) Run() int {
 	gr, ctx := errgroup.WithContext(sctx)
 	c.gr = gr
 	c.ctx = ctx
+	pserr := make(chan error, 1)
+
+	if c.ps != nil {
+		fmt.Fprintf(os.Stderr, "Profiler server listening at %s\n", c.ps.Addr)
+		shouldShutdown := true
+
+		go func() {
+			if err := c.ps.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				shouldShutdown = false
+				fmt.Fprintf(os.Stderr, "Failed to run pprof server: %v\n", c.ps.Addr)
+				cancel()
+			}
+		}()
+
+		go func() {
+			<-c.ctx.Done()
+			if shouldShutdown {
+				pserr <- c.ps.Shutdown(context.Background())
+			} else {
+				close(pserr)
+			}
+		}()
+
+		defer func() {
+			if err, ok := <-pserr; err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to shut down profiler server: %v\n", err)
+			} else if ok {
+				fmt.Fprintf(os.Stderr, "Profiler server was successfully shut down!\n")
+			}
+		}()
+	}
 
 	for i := 0; i < workers; i++ {
 		c.gr.Go(c.worker)
