@@ -1,15 +1,16 @@
 package cli
 
 import (
+	"context"
 	"encoding/xml"
 	"flag"
-	"fmt"
-	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"gihtub.com/tmaxmax/xml-to-graph/internal/graph"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -55,37 +56,150 @@ Format string examples:
    edges without their costs.
  - "%n\n%a\n%.1FM" - Prints the number of nodes, the graph's adjacency matrix on the
    next line, and on the following lines each edge of the graph together with their
-   costs, floored and with a ratio of 0.1`
+   costs, floored and with a ratio of 0.1
+`
+
+	usageFlagOutputDir = `The directory to output the converted files to.`
 )
 
 type CLI struct {
+	outputDir string
 	filepaths []string
 	printer   *graph.Printer
+	ch        chan string
+	progress  chan struct{}
+	gr        *errgroup.Group
+	ctx       context.Context
 }
 
 func New(args []string) *CLI {
 	f := flag.NewFlagSet(cliName, flag.ExitOnError)
 	formatString := f.String("format", "%n %m\n%M\n", usageFlagFormat)
+	outputDir := f.String("output-dir", ".", usageFlagOutputDir)
 	f.Parse(args)
 
-	p, err := graph.ParsePrinter(*formatString)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n\n%s", err, usageFlagFormat)
-		os.Exit(1)
+	fmtStr := *formatString
+	if fmtStr == "" {
+		fmtStr = f.Lookup("format").DefValue
 	}
 
-	return &CLI{filepaths: f.Args(), printer: p}
+	p, err := graph.ParsePrinter(fmtStr)
+	if err != nil {
+		fatalf("%v\n\n%s", err, usageFlagFormat)
+	}
+
+	gr, ctx := errgroup.WithContext(context.Background())
+	c := &CLI{
+		outputDir: *outputDir,
+		filepaths: f.Args(),
+		printer:   p,
+		ch:        make(chan string),
+		progress:  make(chan struct{}),
+		gr:        gr,
+		ctx:       ctx,
+	}
+
+	if c.outputDir == "" {
+		c.outputDir = f.Lookup("output-dir").DefValue
+	}
+
+	return c
 }
 
 func (c *CLI) Run() int {
+	l := len(c.filepaths)
+	if l == 0 {
+		printf("No files to process, exiting...\n")
+		return 0
+	}
+
+	workers := runtime.GOMAXPROCS(-1)
+	if l < workers {
+		workers = l
+	}
+
+	printf("Starting file conversion...\n")
+	printf("Parallelism: %d workers\n", workers)
+	abs, err := filepath.Abs(c.outputDir)
+	if err == nil {
+		printf("Output directory: %s\n", abs)
+	}
+
+	for i := 0; i < workers; i++ {
+		c.gr.Go(c.worker)
+	}
+
+	c.gr.Go(c.outputProgress)
+	c.gr.Go(c.sendPaths)
+
+	if err := c.gr.Wait(); err != nil {
+		printf("\nFailed to process files: %v\n", err)
+		return 2
+	}
+
+	printf("\n")
+
+	return 0
+}
+
+func (c *CLI) sendPaths() error {
+	defer close(c.ch)
+
 	for _, p := range c.filepaths {
-		if err := c.processFile(p); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to process file %q: %v\n", p, err)
-			return 2
+		select {
+		case c.ch <- p:
+		case <-c.ctx.Done():
+			return nil
 		}
 	}
 
-	return 0
+	return nil
+}
+
+func (c *CLI) worker() error {
+	for {
+		select {
+		case p, ok := <-c.ch:
+			if !ok {
+				return nil
+			}
+			if err := c.processFile(p); err != nil {
+				return err
+			}
+		case <-c.ctx.Done():
+			return nil
+		}
+	}
+}
+
+func (c *CLI) outputProgress() error {
+	const barSize = 40
+
+	var done int
+
+	printProgress := func() {
+		l := len(c.filepaths)
+		p := float64(done) / float64(l)
+		hashes := int(float64(barSize) * p)
+		dashes := barSize - hashes
+		barStr := strings.Repeat("#", hashes) + strings.Repeat("-", dashes)
+		printf("Progress: [%s] %d/%d %d%%\r\r", barStr, done, l, int(p*100+0.5))
+	}
+
+	printProgress()
+
+	for {
+		select {
+		case <-c.progress:
+			done++
+			printProgress()
+			if done == len(c.filepaths) {
+				return nil
+			}
+		case <-c.ctx.Done():
+			return nil
+		}
+	}
 }
 
 func (c *CLI) processFile(path string) error {
@@ -95,8 +209,7 @@ func (c *CLI) processFile(path string) error {
 	}
 	defer input.Close()
 
-	outputPath := strings.TrimSuffix(path, filepath.Ext(path)) + ".in"
-	log.Println(outputPath)
+	outputPath := filepath.Join(c.outputDir, strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))+".in")
 	output, err := os.Create(outputPath)
 	if err != nil {
 		return err
@@ -109,5 +222,14 @@ func (c *CLI) processFile(path string) error {
 	}
 
 	_, err = c.printer.Print(output, &g)
-	return err
+	if err != nil {
+		return err
+	}
+
+	select {
+	case <-c.ctx.Done():
+	case c.progress <- struct{}{}:
+	}
+
+	return nil
 }
