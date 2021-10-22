@@ -1,6 +1,9 @@
 package graph_test
 
 import (
+	"embed"
+	"encoding/xml"
+	"io"
 	"strings"
 	"testing"
 
@@ -74,5 +77,24 @@ Adjacency matrix:
 				t.Fatalf("Invalid output:\nexpected:%q\nreceived%q\n", test.output, sb.String())
 			}
 		})
+	}
+}
+
+//go:embed benchfile.xml
+var benchFiles embed.FS
+
+func BenchmarkPrinter(b *testing.B) {
+	f, _ := benchFiles.ReadFile("benchfile.xml")
+	var g graph.Graph
+	if err := xml.Unmarshal(f, &g); err != nil {
+		b.Fatal("Failed to unmarshal bench file:", err)
+	}
+
+	p := graph.MustParsePrinter("%a\n")
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for n := 0; n < b.N; n++ {
+		p.Print(io.Discard, &g)
 	}
 }

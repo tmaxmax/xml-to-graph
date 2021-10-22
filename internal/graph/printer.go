@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"io"
 	"math"
+	"math/big"
 	"strconv"
 	"strings"
 	"sync"
@@ -81,6 +82,7 @@ func (p *ParsePrinterError) Unwrap() error {
 type Printer struct {
 	ops []operation
 	bwp sync.Pool
+	amp sync.Pool
 }
 
 // Print writes the given graph to the given writer.
@@ -156,6 +158,11 @@ func ParsePrinter(format string) (*Printer, error) {
 				return bufio.NewWriter(nil)
 			},
 		},
+		amp: sync.Pool{
+			New: func() interface{} {
+				return &big.Int{}
+			},
+		},
 	}
 
 	for {
@@ -173,7 +180,7 @@ func ParsePrinter(format string) (*Printer, error) {
 			break
 		}
 
-		op, advance, err := parseArg(format[i+1:])
+		op, advance, err := parseArg(format[i+1:], &p.amp)
 		if err != nil {
 			return nil, err
 		}
@@ -207,7 +214,7 @@ const (
 	verbEdges           = 'M'
 )
 
-func parseArg(text string) (operation, int, error) {
+func parseArg(text string, amp *sync.Pool) (operation, int, error) {
 	if text == "" {
 		return nil, 0, &ParsePrinterError{
 			Explanation: "unexpected end",
@@ -222,7 +229,7 @@ func parseArg(text string) (operation, int, error) {
 	case verbEdgesCount:
 		return edgesCountOperation, 1, nil
 	case verbAdjacencyMatrix:
-		return adjacencyMatrixOperation, 1, nil
+		return newAdjacencyMatrixOperation(amp), 1, nil
 	default:
 		costFn, advance, err := parseCostFunction(text)
 		if err != nil {
@@ -329,44 +336,44 @@ var (
 	edgesCountOperation operationFunc = func(w writer, g *Graph) (int, error) {
 		return w.Write(strconv.AppendInt(nil, int64(len(g.Edges)), 10))
 	}
-	adjacencyMatrixOperation operationFunc = func(w writer, g *Graph) (int, error) {
-		grow(w, len(g.Nodes)*len(g.Nodes))
+)
+
+func newAdjacencyMatrixOperation(p *sync.Pool) operation {
+	return operationFunc(func(w writer, g *Graph) (int, error) {
+		nodes := len(g.Nodes)
+		grow(w, 2*nodes*(nodes-1))
+
 		var n int
 		var err error
 
-		for ia, a := range g.Nodes {
-			if ia > 0 {
+		m := p.Get().(*big.Int)
+		defer p.Put(m)
+		m.SetUint64(0)
+
+		for _, e := range g.Edges {
+			m.SetBit(m, e.Src*nodes+e.Dst, 1)
+			if !e.Directed {
+				m.SetBit(m, e.Dst*nodes+e.Src, 1)
+			}
+		}
+
+		for i, a := range g.Nodes {
+			if i > 0 {
 				if err = w.WriteByte('\n'); err != nil {
 					return n, err
 				}
 				n++
 			}
 
-			for ib, b := range g.Nodes {
-				if ib > 0 {
+			for i, b := range g.Nodes {
+				if i > 0 {
 					if err = w.WriteByte(' '); err != nil {
 						return n, err
 					}
 					n++
 				}
 
-				if a.ID == b.ID {
-					if err = w.WriteByte('0'); err != nil {
-						return n, err
-					}
-					n++
-					continue
-				}
-
-				var areAdjacent bool
-				for _, e := range g.Edges {
-					if (e.Src == a.ID && e.Dst == b.ID) || (!e.Directed && e.Src == b.ID && e.Dst == a.ID) {
-						areAdjacent = true
-						break
-					}
-				}
-
-				if areAdjacent {
+				if m.Bit(a.ID*nodes+b.ID) == 1 {
 					err = w.WriteByte('1')
 				} else {
 					err = w.WriteByte('0')
@@ -380,8 +387,8 @@ var (
 		}
 
 		return n, nil
-	}
-)
+	})
+}
 
 type verticesOperation struct {
 	prefixCost bool
