@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/xml"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -65,6 +66,25 @@ Format string examples:
 
 	usageFlagGlob = `A pattern that is used to match the files that will be converted. CLI arguments
 have priority over this flag.`
+
+	cliDescription = `
+██╗░░██╗███╗░░░███╗██╗░░░░░░░░░░░████████╗░█████╗░░░░░░░░██████╗░██████╗░░█████╗░██████╗░██╗░░██╗
+╚██╗██╔╝████╗░████║██║░░░░░░░░░░░╚══██╔══╝██╔══██╗░░░░░░██╔════╝░██╔══██╗██╔══██╗██╔══██╗██║░░██║
+░╚███╔╝░██╔████╔██║██║░░░░░█████╗░░░██║░░░██║░░██║█████╗██║░░██╗░██████╔╝███████║██████╔╝███████║
+░██╔██╗░██║╚██╔╝██║██║░░░░░╚════╝░░░██║░░░██║░░██║╚════╝██║░░╚██╗██╔══██╗██╔══██║██╔═══╝░██╔══██║
+██╔╝╚██╗██║░╚═╝░██║███████╗░░░░░░░░░██║░░░╚█████╔╝░░░░░░╚██████╔╝██║░░██║██║░░██║██║░░░░░██║░░██║
+╚═╝░░╚═╝╚═╝░░░░░╚═╝╚══════╝░░░░░░░░░╚═╝░░░░╚════╝░░░░░░░░╚═════╝░╚═╝░░╚═╝╚═╝░░╚═╝╚═╝░░░░░╚═╝░░╚═╝
+
+xml-to-graph is a tool that converts XML files to input files for graph
+exercises. Pass the paths you want to convert as arguments to the command:
+
+	xml-to-graph path/to/file.xml path/to/another.xml
+
+and the converted files 'file.in' and 'another.in' will be saved by default to the
+location where xml-to-graph is called from. Customize the save location, output, and
+more using the command's flags.
+
+`
 )
 
 type CLI struct {
@@ -83,6 +103,11 @@ func New(args []string) *CLI {
 	formatString := f.String("format", "%n %m\n%M\n", usageFlagFormat)
 	outputDir := f.String("output-dir", ".", usageFlagOutputDir)
 	globPattern := f.String("glob", "", usageFlagGlob)
+	usage := f.Usage
+	f.Usage = func() {
+		fmt.Fprint(f.Output(), cliDescription)
+		usage()
+	}
 	f.Parse(args)
 
 	fmtStr := *formatString
