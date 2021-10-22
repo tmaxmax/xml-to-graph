@@ -2,7 +2,7 @@
 
 Convertește reprezentările XML ale grafurilor generate cu ajutorul [acestei utilități](http://info.tm.edu.ro:8088/~ORosu/clasa/11b/graf.jar) în fișiere de intrare pentru problemele date la clasă, în stilul pbinfo.
 
-Descarcă pentru [Windows](https://github.com/tmaxmax/xml-to-graph/releases/download/v0.2.0/xml-to-graph.exe) sau [Linux](https://github.com/tmaxmax/xml-to-graph/releases/download/v0.2.0/xml-to-graph) și apoi adaugă locația executabilului în PATH pentru a-l putea rula de oriunde.
+Descarcă pentru [Windows](https://github.com/tmaxmax/xml-to-graph/releases/download/v0.2.1/xml-to-graph.exe) sau [Linux](https://github.com/tmaxmax/xml-to-graph/releases/download/v0.2.1/xml-to-graph) și apoi adaugă locația executabilului în PATH pentru a-l putea rula de oriunde.
 
 ## Utilizare
 
