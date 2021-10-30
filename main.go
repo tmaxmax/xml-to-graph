@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"gihtub.com/tmaxmax/xml-to-graph/internal/cli"
+	"github.com/tmaxmax/xml-to-graph/internal/cli"
 )
 
 func main() {

@@ -1,4 +1,4 @@
-module gihtub.com/tmaxmax/xml-to-graph
+module github.com/tmaxmax/xml-to-graph
 
 go 1.17
 

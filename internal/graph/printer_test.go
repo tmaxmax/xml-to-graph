@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"gihtub.com/tmaxmax/xml-to-graph/internal/graph"
+	"github.com/tmaxmax/xml-to-graph/internal/graph"
 )
 
 func TestParsePrinter(t *testing.T) {

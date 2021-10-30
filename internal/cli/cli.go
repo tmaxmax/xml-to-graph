@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"gihtub.com/tmaxmax/xml-to-graph/internal/graph"
+	"github.com/tmaxmax/xml-to-graph/internal/graph"
 	"golang.org/x/sync/errgroup"
 )
 
